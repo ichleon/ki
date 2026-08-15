@@ -1,0 +1,424 @@
+// Einfaches neuronales Punktnetz in SVG
+// Interaktion:
+// - "Knoten hinzufügen" -> Klick auf Arbeitsfläche fügt neuen Knoten an der Klickposition
+// - Connect-Mode an: ziehe von Knoten zu Knoten, um gerichtete Kanten zu erstellen
+// - Doppelklick Knoten: togglet "Input"-Flag (dann per Klick on/off)
+// - Klick auf Input-Knoten: schaltet seinen Input-Zustand (an/aus)
+// - Regeln: OR / AND (radio im Toolbar)
+// - Farben: Knoten: rot (aus), blau (PARTIAL AND), grün (aktiv); Kanten: schwarz / gelb (wenn Quelle aktiv)
+
+(() => {
+  const svg = document.getElementById('canvas');
+  const addNodeBtn = document.getElementById('addNodeBtn');
+  const connectModeCheckbox = document.getElementById('connectMode');
+  const clearBtn = document.getElementById('clearBtn');
+  const resetInputsBtn = document.getElementById('resetInputsBtn');
+  const ruleRadios = document.getElementsByName('rule');
+
+  let nodes = []; // {id,x,y, isInput:false, inputOn:false, active:false, partial:false}
+  let edges = []; // {id, fromId, toId}
+  let nextNodeId = 1;
+  let nextEdgeId = 1;
+
+  // drawing groups
+  const edgeLayer = document.createElementNS('http://www.w3.org/2000/svg','g');
+  const tempLayer = document.createElementNS('http://www.w3.org/2000/svg','g');
+  const nodeLayer = document.createElementNS('http://www.w3.org/2000/svg','g');
+  svg.appendChild(edgeLayer);
+  svg.appendChild(tempLayer);
+  svg.appendChild(nodeLayer);
+
+  // temp line while connecting
+  let tempLine = null;
+  let connectFrom = null;
+
+  function getRule(){
+    for(const r of ruleRadios) if(r.checked) return r.value;
+    return 'OR';
+  }
+
+  // create node UI
+  function createNode(x,y){
+    const id = nextNodeId++;
+    const data = {id,x,y,isInput:false,inputOn:false,active:false,partial:false};
+    nodes.push(data);
+    const g = document.createElementNS('http://www.w3.org/2000/svg','g');
+    g.classList.add('node');
+    g.dataset.id = id;
+
+    const circle = document.createElementNS('http://www.w3.org/2000/svg','circle');
+    circle.setAttribute('r','16');
+    circle.setAttribute('cx',x);
+    circle.setAttribute('cy',y);
+    circle.setAttribute('fill','#eee');
+
+    const inputIndicator = document.createElementNS('http://www.w3.org/2000/svg','circle');
+    inputIndicator.setAttribute('r','5');
+    inputIndicator.setAttribute('cx',x+10);
+    inputIndicator.setAttribute('cy',y-10);
+    inputIndicator.classList.add('input-indicator');
+    inputIndicator.style.display = 'none';
+
+    const label = document.createElementNS('http://www.w3.org/2000/svg','text');
+    label.classList.add('node-label');
+    label.setAttribute('x', x);
+    label.setAttribute('y', y+32);
+    label.setAttribute('text-anchor','middle');
+    label.textContent = `#${id}`;
+
+    g.appendChild(circle);
+    g.appendChild(inputIndicator);
+    g.appendChild(label);
+    nodeLayer.appendChild(g);
+
+    // interactions
+    let dragging = false;
+    let offset = {x:0,y:0};
+
+    g.addEventListener('mousedown', (ev) => {
+      ev.stopPropagation();
+      if(connectModeCheckbox.checked){
+        // start connect
+        connectFrom = data;
+        startTempLine(data.x, data.y);
+      } else {
+        dragging = true;
+        g.classList.add('dragging');
+        offset.x = ev.clientX - data.x;
+        offset.y = ev.clientY - data.y;
+      }
+    });
+
+    window.addEventListener('mousemove', (ev) => {
+      if(dragging){
+        const nx = ev.clientX - offset.x;
+        const ny = ev.clientY - offset.y;
+        data.x = nx; data.y = ny;
+        updateNodeElement(data, g);
+        updateEdgesForNode(data.id);
+      } else if(connectFrom && tempLine){
+        const pt = svg.createSVGPoint();
+        pt.x = ev.clientX; pt.y = ev.clientY;
+        const ctm = svg.getScreenCTM().inverse();
+        const svgP = pt.matrixTransform(ctm);
+        tempLine.setAttribute('x2', svgP.x);
+        tempLine.setAttribute('y2', svgP.y);
+      }
+    });
+
+    window.addEventListener('mouseup', (ev) => {
+      if(dragging){
+        dragging = false;
+        g.classList.remove('dragging');
+      }
+      if(connectFrom && tempLine){
+        // check target node under mouse
+        const target = pickNodeAtScreenPos(ev.clientX, ev.clientY);
+        if(target && target.id !== connectFrom.id){
+          // create edge from connectFrom -> target
+          createEdge(connectFrom.id, target.id);
+          propagate();
+        }
+        stopTempLine();
+        connectFrom = null;
+      }
+    });
+
+    g.addEventListener('dblclick', (ev) => {
+      ev.stopPropagation();
+      // toggle input flag
+      data.isInput = !data.isInput;
+      if(!data.isInput){
+        data.inputOn = false;
+      }
+      updateNodeElement(data, g);
+      propagate();
+    });
+
+    g.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      // if input node, toggle its inputOn
+      if(data.isInput){
+        data.inputOn = !data.inputOn;
+        updateNodeElement(data, g);
+        propagate();
+      }
+    });
+
+    updateNodeElement(data, g);
+    return data;
+  }
+
+  function updateNodeElement(data, gEl){
+    const circle = gEl.querySelector('circle');
+    const label = gEl.querySelector('text');
+    const inputIndicator = gEl.querySelectorAll('circle')[1];
+
+    circle.setAttribute('cx', data.x);
+    circle.setAttribute('cy', data.y);
+    label.setAttribute('x', data.x);
+    label.setAttribute('y', data.y + 32);
+    inputIndicator.setAttribute('cx', data.x + 10);
+    inputIndicator.setAttribute('cy', data.y - 10);
+
+    // color logic
+    if(data.active){
+      circle.setAttribute('fill','#27ae60'); // grün
+    } else if(data.partial){
+      circle.setAttribute('fill','#2980b9'); // blau
+    } else {
+      circle.setAttribute('fill','#c0392b'); // rot
+    }
+    inputIndicator.style.display = data.isInput ? 'block' : 'none';
+    inputIndicator.setAttribute('fill', data.inputOn ? '#f1c40f' : '#fff');
+  }
+
+  function createEdge(fromId,toId){
+    // prevent duplicate
+    if(edges.some(e => e.fromId===fromId && e.toId===toId)) return;
+    const edge = {id: nextEdgeId++, fromId, toId};
+    edges.push(edge);
+    drawEdges();
+  }
+
+  function drawEdges(){
+    // remove children
+    while(edgeLayer.firstChild) edgeLayer.removeChild(edgeLayer.firstChild);
+    for(const e of edges){
+      const from = nodes.find(n=>n.id===e.fromId);
+      const to = nodes.find(n=>n.id===e.toId);
+      if(!from || !to) continue;
+      const line = document.createElementNS('http://www.w3.org/2000/svg','line');
+      line.classList.add('edge');
+      line.dataset.id = e.id;
+      line.setAttribute('x1', from.x);
+      line.setAttribute('y1', from.y);
+      line.setAttribute('x2', to.x);
+      line.setAttribute('y2', to.y);
+      line.setAttribute('stroke', '#111');
+      // arrow head
+      const markerId = 'arrow';
+      ensureMarker(markerId);
+      line.setAttribute('marker-end', `url(#${markerId})`);
+      edgeLayer.appendChild(line);
+    }
+    refreshEdgeColors();
+  }
+
+  function updateEdgesForNode(nodeId){
+    // update positions for edges connected to node
+    for(const child of edgeLayer.children){
+      const e = edges.find(ed => ed.id == child.dataset.id);
+      if(!e) continue;
+      const from = nodes.find(n=>n.id===e.fromId);
+      const to = nodes.find(n=>n.id===e.toId);
+      if(!from || !to) continue;
+      child.setAttribute('x1', from.x);
+      child.setAttribute('y1', from.y);
+      child.setAttribute('x2', to.x);
+      child.setAttribute('y2', to.y);
+    }
+  }
+
+  function ensureMarker(id){
+    // create arrow marker once
+    if(svg.querySelector(`#${id}`)) return;
+    const defs = svg.querySelector('defs') || (() => {
+      const d = document.createElementNS('http://www.w3.org/2000/svg','defs');
+      svg.insertBefore(d, svg.firstChild);
+      return d;
+    })();
+    const marker = document.createElementNS('http://www.w3.org/2000/svg','marker');
+    marker.setAttribute('id', id);
+    marker.setAttribute('markerWidth', '8');
+    marker.setAttribute('markerHeight', '8');
+    marker.setAttribute('refX', '8');
+    marker.setAttribute('refY', '3.5');
+    marker.setAttribute('orient', 'auto');
+    const path = document.createElementNS('http://www.w3.org/2000/svg','path');
+    path.setAttribute('d','M0,0 L0,7 L8,3.5 z');
+    path.setAttribute('fill','#111');
+    marker.appendChild(path);
+    svg.querySelector('defs').appendChild(marker);
+  }
+
+  function startTempLine(x,y){
+    stopTempLine();
+    tempLine = document.createElementNS('http://www.w3.org/2000/svg','line');
+    tempLine.classList.add('temp-line');
+    tempLine.setAttribute('x1', x);
+    tempLine.setAttribute('y1', y);
+    tempLine.setAttribute('x2', x);
+    tempLine.setAttribute('y2', y);
+    tempLayer.appendChild(tempLine);
+  }
+
+  function stopTempLine(){
+    if(tempLine && tempLine.parentNode) tempLine.parentNode.removeChild(tempLine);
+    tempLine = null;
+  }
+
+  function pickNodeAtScreenPos(clientX,clientY){
+    // naive: check bounding boxes by comparing distances to node centers
+    const pt = svg.createSVGPoint();
+    pt.x = clientX; pt.y = clientY;
+    const ctm = svg.getScreenCTM().inverse();
+    const svgP = pt.matrixTransform(ctm);
+    for(const n of nodes){
+      const dx = svgP.x - n.x;
+      const dy = svgP.y - n.y;
+      if(Math.sqrt(dx*dx+dy*dy) <= 18) return n;
+    }
+    return null;
+  }
+
+  // propagation logic (iterative until stable, limit iterations)
+  function propagate(){
+    // initialize: set active/partial false
+    for(const n of nodes){ n.active = false; n.partial = false; }
+
+    // Build incoming lists
+    const incoming = new Map();
+    for(const n of nodes) incoming.set(n.id, []);
+    for(const e of edges){
+      if(incoming.has(e.toId)) incoming.get(e.toId).push(e.fromId);
+    }
+
+    // Inputs: nodes with isInput true have their active state = inputOn
+    // We'll iterate: on each iteration, compute nodes based on current known active states.
+    let changed = true;
+    let iter = 0;
+    const maxIter = 20;
+    while(changed && iter++ < maxIter){
+      changed = false;
+      for(const n of nodes){
+        const ins = incoming.get(n.id) || [];
+        const prevActive = n.active;
+        const prevPartial = n.partial;
+
+        if(n.isInput){
+          // input nodes: active = inputOn
+          n.active = !!n.inputOn;
+          n.partial = false;
+        } else if(ins.length === 0){
+          // no inputs and not input node -> default off
+          n.active = false;
+          n.partial = false;
+        } else {
+          // compute based on rule
+          const rule = getRule();
+          const incomingStates = ins.map(id => {
+            const src = nodes.find(x=>x.id===id);
+            return src ? !!src.active : false;
+          });
+          const anyOn = incomingStates.some(Boolean);
+          const allOn = incomingStates.every(Boolean);
+          if(rule === 'OR'){
+            n.active = anyOn;
+            n.partial = false;
+          } else { // AND
+            n.active = allOn;
+            n.partial = (anyOn && !allOn);
+          }
+        }
+        if(n.active !== prevActive || n.partial !== prevPartial) changed = true;
+      }
+    }
+
+    // finally update visuals
+    // edges: yellow if source active
+    refreshEdgeColors();
+    // nodes update
+    for(const g of nodeLayer.children){
+      const id = Number(g.dataset.id);
+      const n = nodes.find(x=>x.id===id);
+      if(n) updateNodeElement(n,g);
+    }
+  }
+
+  function refreshEdgeColors(){
+    for(const child of edgeLayer.children){
+      const e = edges.find(ed => ed.id == child.dataset.id);
+      if(!e) continue;
+      const from = nodes.find(n=>n.id===e.fromId);
+      const color = (from && from.active) ? '#f1c40f' : '#111'; // gelb wenn Quelle aktiv
+      child.setAttribute('stroke', color);
+      // adjust marker color (arrow fill)
+      const m = svg.querySelector('defs marker path');
+      if(m) m.setAttribute('fill', color);
+    }
+  }
+
+  // toolbar actions
+  addNodeBtn.addEventListener('click', () => {
+    // add node at center
+    const rect = svg.getBoundingClientRect();
+    const x = rect.width/2;
+    const y = rect.height/2;
+    const n = createNode(x,y);
+    propagate();
+  });
+
+  svg.addEventListener('dblclick', (ev) => {
+    // doubleclick on canvas -> create node at position
+    const pt = svg.createSVGPoint();
+    pt.x = ev.clientX; pt.y = ev.clientY;
+    const ctm = svg.getScreenCTM().inverse();
+    const p = pt.matrixTransform(ctm);
+    createNode(p.x, p.y);
+    propagate();
+  });
+
+  clearBtn.addEventListener('click', () => {
+    nodes = [];
+    edges = [];
+    nextNodeId = 1;
+    nextEdgeId = 1;
+    while(nodeLayer.firstChild) nodeLayer.removeChild(nodeLayer.firstChild);
+    while(edgeLayer.firstChild) edgeLayer.removeChild(edgeLayer.firstChild);
+    propagate();
+  });
+
+  resetInputsBtn.addEventListener('click', () => {
+    for(const n of nodes){ n.isInput = false; n.inputOn = false; }
+    // update visuals
+    for(const g of nodeLayer.children){
+      const id = Number(g.dataset.id);
+      const n = nodes.find(x=>x.id===id);
+      if(n) updateNodeElement(n,g);
+    }
+    propagate();
+  });
+
+  // rule change handler
+  for(const r of ruleRadios){
+    r.addEventListener('change', () => propagate());
+  }
+
+  // initial demo: create a few nodes
+  (function seedDemo(){
+    const n1 = createNode(120,120); n1.isInput = true; n1.inputOn = true;
+    const n2 = createNode(320,120); n2.isInput = true; n2.inputOn = false;
+    const n3 = createNode(220,260);
+    createEdge(n1.id, n3.id);
+    createEdge(n2.id, n3.id);
+    propagate();
+  })();
+
+  // helper: delete edge or node via keyboard when selected? (optional)
+  // For simplicity not implemented selection; user can clear or reset.
+
+  // click on background to stop connecting
+  svg.addEventListener('mousedown', (ev) => {
+    if(ev.target === svg && connectFrom){
+      stopTempLine();
+      connectFrom = null;
+    }
+  });
+
+  // simple auto-resize on window
+  window.addEventListener('resize', () => {
+    // nothing special required — SVG flexible
+  });
+
+})();

@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Neuronales Netz (Punkte & Leitungen)</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="toolbar">
+    <button id="addNodeBtn">Knoten hinzufügen</button>
+    <label><input type="radio" name="rule" value="OR" checked> OR (mind. 1)</label>
+    <label><input type="radio" name="rule" value="AND"> AND (alle)</label>
+    <label><input type="checkbox" id="connectMode"> Connect-Mode</label>
+    <button id="clearBtn">Alles löschen</button>
+    <button id="resetInputsBtn">Input-Flags zurücksetzen</button>
+    <div id="legend">
+      <strong>Legende:</strong>
+      <div><span class="dot red"></span> Aus</div>
+      <div><span class="dot blue"></span> Nicht alle Eingänge an (PARTIAL)</div>
+      <div><span class="dot green"></span> Aktiv (Signal weitergegeben)</div>
+      <div>Leitung: schwarz (inaktiv) / gelb (Signal von Quelle)</div>
+      <div><small>Interaktion: Ziehen = Knoten verschieben. Connect-Mode an → Ziehe von Knoten auf Ziel, um Leitung zu erstellen. Doppelklick Knoten = Input-Flag (kann per Klick an/aus geschaltet werden).</small></div>
+    </div>
+  </div>
+
+  <div id="canvasWrap">
+    <svg id="canvas" xmlns="http://www.w3.org/2000/svg"></svg>
+  </div>
+
+  <script src="main.js"></script>
+</body>
+</html>
