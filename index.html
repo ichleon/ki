@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Neural Flow — Netzwerk-Editor</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><div class="brand-mark">N</div><div><strong>Neural Flow</strong><span>Interaktiver Netzwerk-Editor</span></div></div>
+    <div class="top-actions">
+      <button id="demoBtn" class="btn ghost">Demo</button>
+      <button id="clearBtn" class="btn danger">Leeren</button>
+    </div>
+  </header>
+
+  <main class="app">
+    <aside class="sidebar">
+      <section class="panel">
+        <div class="panel-title">Werkzeuge</div>
+        <button id="addNodeBtn" class="tool active"><span>＋</span><div><b>Knoten</b><small>Auf Fläche klicken</small></div></button>
+        <button id="connectBtn" class="tool"><span>↗</span><div><b>Verbinden</b><small>Von Knoten zu Knoten</small></div></button>
+        <button id="deleteBtn" class="tool"><span>⌫</span><div><b>Löschen</b><small>Knoten oder Verbindung</small></div></button>
+      </section>
+
+      <section class="panel">
+        <div class="panel-title">Logik</div>
+        <div class="segmented"><button class="rule active" data-rule="OR">OR</button><button class="rule" data-rule="AND">AND</button></div>
+        <p class="hint" id="ruleHint">Mindestens ein Eingang muss aktiv sein.</p>
+      </section>
+
+      <section class="panel">
+        <div class="panel-title">Simulation</div>
+        <button id="simulateBtn" class="simulate"><span>▶</span> Signal testen</button>
+        <button id="resetInputsBtn" class="text-btn">Inputs zurücksetzen</button>
+      </section>
+
+      <section class="panel legend">
+        <div class="panel-title">Legende</div>
+        <div><i class="legend-dot input"></i> Input</div>
+        <div><i class="legend-dot idle"></i> Inaktiv</div>
+        <div><i class="legend-dot partial"></i> Teilaktiv</div>
+        <div><i class="legend-dot active"></i> Aktiv</div>
+        <div class="legend-line"><i></i> Signalfluss</div>
+      </section>
+
+      <div class="help">Doppelklick auf einen Knoten: Input umschalten.<br>Input anklicken: Signal an/aus.<br>Mausrad: Zoom · Leertaste + Ziehen: Fläche bewegen.</div>
+    </aside>
+
+    <section id="workspace">
+      <div class="canvas-toolbar">
+        <div><span class="status-dot"></span><span id="modeLabel">Knoten platzieren</span></div>
+        <div class="zoom"><button id="zoomOut">−</button><span id="zoomLabel">100%</span><button id="zoomIn">＋</button><button id="zoomReset">↺</button></div>
+      </div>
+      <svg id="canvas" xmlns="http://www.w3.org/2000/svg" aria-label="Netzwerk-Arbeitsfläche">
+        <defs>
+          <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse"><path d="M 32 0 L 0 0 0 32" fill="none" stroke="rgba(148,163,184,.10)" stroke-width="1"/></pattern>
+          <filter id="glow"><feGaussianBlur stdDeviation="4" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+          <filter id="softGlow"><feGaussianBlur stdDeviation="7"/></filter>
+          <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="4" orient="auto"><path d="M0,0 L0,8 L10,4 z"/></marker>
+        </defs>
+        <rect id="gridRect" width="100%" height="100%" fill="url(#grid)"/>
+        <g id="world">
+          <g id="edgeGlowLayer"></g><g id="edgeLayer"></g><g id="signalLayer"></g><g id="tempLayer"></g><g id="nodeLayer"></g>
+        </g>
+      </svg>
+      <div class="stats"><span><b id="nodeCount">0</b> Knoten</span><span><b id="edgeCount">0</b> Verbindungen</span><span><b id="activeCount">0</b> aktiv</span></div>
+      <div id="toast"></div>
+    </section>
+
+    <aside id="inspector" class="inspector hidden">
+      <div class="panel-title">Auswahl</div>
+      <div id="inspectorContent"></div>
+    </aside>
+  </main>
+  <script src="main.js"></script>
+</body>
+</html>
