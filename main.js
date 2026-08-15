@@ -406,7 +406,7 @@
   })();
 
   // helper: delete edge or node via keyboard when selected? (optional)
-  // For simplicity not implemented selection; user can clear or reset.
+  // For Simplicity not implemented selection; user can clear or reset.
 
   // click on background to stop connecting
   svg.addEventListener('mousedown', (ev) => {
