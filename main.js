@@ -197,7 +197,7 @@
       line.setAttribute('y2', to.y);
       line.setAttribute('stroke', '#111');
       // arrow head
-      const markerId = 'arrow';
+      const markerId = `arrow-${e.id}`;
       ensureMarker(markerId);
       line.setAttribute('marker-end', `url(#${markerId})`);
       edgeLayer.appendChild(line);
@@ -343,9 +343,10 @@
       const from = nodes.find(n=>n.id===e.fromId);
       const color = (from && from.active) ? '#f1c40f' : '#111'; // gelb wenn Quelle aktiv
       child.setAttribute('stroke', color);
-      // adjust marker color (arrow fill)
-      const m = svg.querySelector('defs marker path');
-      if(m) m.setAttribute('fill', color);
+      // Each edge owns its marker so arrow colors cannot overwrite each other.
+      const markerId = `arrow-${e.id}`;
+      const markerPath = svg.querySelector(`#${markerId} path`);
+      if(markerPath) markerPath.setAttribute('fill', color);
     }
   }
 
